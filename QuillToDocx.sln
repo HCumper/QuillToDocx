@@ -1,0 +1,16 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "QuillToDocx", "QuillToDocx\QuillToDocx.fsproj", "{48DDF8EB-1EEF-45DA-9D1A-B3021DD78CAC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{48DDF8EB-1EEF-45DA-9D1A-B3021DD78CAC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{48DDF8EB-1EEF-45DA-9D1A-B3021DD78CAC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{48DDF8EB-1EEF-45DA-9D1A-B3021DD78CAC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{48DDF8EB-1EEF-45DA-9D1A-B3021DD78CAC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
