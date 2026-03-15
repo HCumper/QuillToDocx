@@ -13,6 +13,8 @@
     <Compile Include="QuillParser.fs" />
     <Compile Include="QuillDecode.fs" />
     <Compile Include="DocxWriter.fs" />
+    <Compile Include="PdfWriter.fs" />
+    <Compile Include="HtmlWriter.fs" />
     <Compile Include="Program.fs" />
     <Content Include="README.md" />
   </ItemGroup>
