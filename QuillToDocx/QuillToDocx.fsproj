@@ -21,7 +21,6 @@
     <Compile Include="HtmlWriter.fs" />
     <Compile Include="MarkdownWriter.fs" />
     <Compile Include="Program.fs" />
-    <Content Include="README.md" />
   </ItemGroup>
 
   <ItemGroup>
