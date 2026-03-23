@@ -10,7 +10,7 @@ module Program =
         if String.IsNullOrWhiteSpace(ext) then inputPath + ".doc" else inputPath
 
     let private usage () =
-        eprintfn "Usage: QuillToDocx <input.doc> [output.docx|output.pdf|output.html]"
+        eprintfn "Usage: QuillToDocx <input.doc> [output.docx|output.pdf|output.html|output.md]"
         eprintfn "       QuillToDocx <basename>"
 
     let private resolvePaths (argv: string array) =
@@ -18,7 +18,12 @@ module Program =
         | [| singleArg |] ->
             let ext = Path.GetExtension(singleArg)
 
-            if String.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase) then
+            if
+                String.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase)
+                || String.Equals(ext, ".pdf", StringComparison.OrdinalIgnoreCase)
+                || String.Equals(ext, ".html", StringComparison.OrdinalIgnoreCase)
+                || String.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase)
+            then
                 Error "Single-argument mode expects a basename or a .doc input file."
             else
                 let inputPath = resolveInputPath singleArg
@@ -57,7 +62,8 @@ module Program =
                     | ".docx" -> DocxWriter.writeDocx parsed decoded outputPath
                     | ".pdf" -> PdfWriter.writePdf parsed decoded outputPath
                     | ".html" -> HtmlWriter.writeHtml parsed decoded outputPath
-                    | _ -> failwithf "Unsupported output format '%s'. Use .docx, .pdf, or .html." outputExtension
+                    | ".md" -> MarkdownWriter.writeMarkdown parsed decoded outputPath
+                    | _ -> failwithf "Unsupported output format '%s'. Use .docx, .pdf, .html, or .md." outputExtension
 
                     printfn "Converted '%s' to '%s'" inputPath outputPath
                     0
