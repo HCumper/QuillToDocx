@@ -73,7 +73,7 @@ module DocxWriter =
         clampTwips DefaultPageWidth 10080 15840 (leftMargin + rightMargin + twipsFromCols DefaultBodyWidthCols)
 
     let private mapJustification j =
-        match int j with
+        match int (j &&& 0x0Fuy) with
         | 0
         | 4 -> JustificationValues.Left
         | 1
@@ -104,6 +104,7 @@ module DocxWriter =
         rp.AppendChild(RunFonts(Ascii = DefaultFontName, HighAnsi = DefaultFontName, ComplexScript = DefaultFontName)) |> ignore
         rp.AppendChild(FontSize(Val = StringValue(DefaultFontSize))) |> ignore
         if s.Bold then rp.AppendChild(Bold()) |> ignore
+        if s.Italic then rp.AppendChild(Italic()) |> ignore
         if s.Underline then rp.AppendChild(Underline(Val = UnderlineValues.Single)) |> ignore
         if s.Sub then rp.AppendChild(VerticalTextAlignment(Val = VerticalPositionValues.Subscript)) |> ignore
         if s.Super then rp.AppendChild(VerticalTextAlignment(Val = VerticalPositionValues.Superscript)) |> ignore

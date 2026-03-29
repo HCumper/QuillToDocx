@@ -58,6 +58,7 @@ type TabTableDef =
 
 type QuillFile =
     { Header: Header
+      IsPcFile: bool
       TextBuffer: byte[]
       ParaHead: ParaTableHead
       Paras: ParaTable[]
@@ -66,6 +67,7 @@ type QuillFile =
 
 type TextStyle =
     { Bold: bool
+      Italic: bool
       Underline: bool
       Sub: bool
       Super: bool }

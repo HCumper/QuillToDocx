@@ -1,5 +1,5 @@
 QuillToDocx
-QuillToDocx converts legacy Quill .doc files into .docx, .pdf, .html, and .md.
+QuillToDocx converts legacy QL and PC Quill `.doc` files into `.docx`, `.pdf`, `.html`, and `.md`.
 
 Usage
 QuillToDocx basename

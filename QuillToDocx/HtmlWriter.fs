@@ -28,6 +28,7 @@ module HtmlWriter =
     let private cssClassForStyle (style: TextStyle) =
         let parts = ResizeArray<string>()
         if style.Bold then parts.Add("bold")
+        if style.Italic then parts.Add("italic")
         if style.Underline then parts.Add("underline")
         if style.Sub then parts.Add("sub")
         if style.Super then parts.Add("super")
@@ -178,6 +179,7 @@ module HtmlWriter =
       width: 4ch;
     }
     .bold { font-weight: 700; }
+    .italic { font-style: italic; }
     .underline { text-decoration: underline; }
     .sub { vertical-align: sub; font-size: 0.8em; }
     .super { vertical-align: super; font-size: 0.8em; }

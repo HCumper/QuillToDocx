@@ -40,8 +40,11 @@ module MarkdownWriter =
         let withUnderline =
             if style.Underline then sprintf "<u>%s</u>" text else text
 
+        let withItalic =
+            if style.Italic then sprintf "*%s*" withUnderline else withUnderline
+
         let withSub =
-            if style.Sub then sprintf "<sub>%s</sub>" withUnderline else withUnderline
+            if style.Sub then sprintf "<sub>%s</sub>" withItalic else withItalic
 
         if style.Super then sprintf "<sup>%s</sup>" withSub else withSub
 

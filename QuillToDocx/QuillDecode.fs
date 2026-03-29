@@ -28,55 +28,62 @@ module QuillDecode =
     let SuperScript = 0x12uy
 
     [<Literal>]
+    let Italic = 0x13uy
+
+    [<Literal>]
     let SoftHyphen = 0x1Euy
 
     let private defaultStyle =
         { Bold = false
+          Italic = false
           Underline = false
           Sub = false
           Super = false }
 
-    let private qlCharToUnicode (b: byte) =
-        match int b with
-        | x when x >= 0x20 && x <= 0x7E -> string (char x)
-        | 0x7F -> "\u00A3"
-        | 0x80 -> "\u00C4"
-        | 0x81 -> "\u00A3"
-        | 0x82 -> "\u00C5"
-        | 0x83 -> "\u00C9"
-        | 0x84 -> "\u00F6"
-        | 0x85 -> "\u00F5"
-        | 0x86 -> "\u00F8"
-        | 0x87 -> "\u00FC"
-        | 0x88 -> "\u00E7"
-        | 0x89 -> "\u00F1"
-        | 0x8A -> "\u00FD"
-        | 0x8B -> "\u0152"
-        | 0x8C -> "\u00E1"
-        | 0x8D -> "\u00E0"
-        | 0x8E -> "\u00E2"
-        | 0x8F -> "\u00EB"
-        | 0x90 -> "\u00E8"
-        | 0x91 -> "\u00EA"
-        | 0x92 -> "\u00EF"
-        | 0x93 -> "\u00ED"
-        | 0x94 -> "\u00EC"
-        | 0x95 -> "\u00EE"
-        | 0x96 -> "\u00F3"
-        | 0x97 -> "\u00F2"
-        | 0x98 -> "\u00F4"
-        | 0x99 -> "\u00FA"
-        | 0x9A -> "\u00F9"
-        | 0x9B -> "\u00FB"
-        | 0x9C -> "\u00DF"
-        | 0x9D -> "\u00A2"
-        | 0x9E -> "\u00A5"
-        | _ when b < 0x20uy -> ""
-        | _ ->
-            Encoding.GetEncoding("ISO-8859-1").GetString([| b |])
+    let private qlCharToUnicode (isPcFile: bool) (b: byte) =
+        if b < 0x20uy then
+            ""
+        elif isPcFile then
+            Encoding.GetEncoding(437).GetString([| b |])
+        else
+            match int b with
+            | x when x >= 0x20 && x <= 0x7E -> string (char x)
+            | 0x7F -> "\u00A3"
+            | 0x80 -> "\u00C4"
+            | 0x81 -> "\u00A3"
+            | 0x82 -> "\u00C5"
+            | 0x83 -> "\u00C9"
+            | 0x84 -> "\u00F6"
+            | 0x85 -> "\u00F5"
+            | 0x86 -> "\u00F8"
+            | 0x87 -> "\u00FC"
+            | 0x88 -> "\u00E7"
+            | 0x89 -> "\u00F1"
+            | 0x8A -> "\u00FD"
+            | 0x8B -> "\u0152"
+            | 0x8C -> "\u00E1"
+            | 0x8D -> "\u00E0"
+            | 0x8E -> "\u00E2"
+            | 0x8F -> "\u00EB"
+            | 0x90 -> "\u00E8"
+            | 0x91 -> "\u00EA"
+            | 0x92 -> "\u00EF"
+            | 0x93 -> "\u00ED"
+            | 0x94 -> "\u00EC"
+            | 0x95 -> "\u00EE"
+            | 0x96 -> "\u00F3"
+            | 0x97 -> "\u00F2"
+            | 0x98 -> "\u00F4"
+            | 0x99 -> "\u00FA"
+            | 0x9A -> "\u00F9"
+            | 0x9B -> "\u00FB"
+            | 0x9C -> "\u00DF"
+            | 0x9D -> "\u00A2"
+            | 0x9E -> "\u00A5"
+            | _ -> Encoding.GetEncoding("ISO-8859-1").GetString([| b |])
 
     let private getParagraphBytes (qf: QuillFile) (p: ParaTable) =
-        let start = int p.Offset
+        let start = int p.Offset - int qf.Header.HeaderLen
         let len = int p.ParaLen
         if len = 0 then
             [||]
@@ -85,7 +92,7 @@ module QuillDecode =
                 failwithf "Paragraph out of range: offset=%d len=%d" start len
             qf.TextBuffer[start .. start + len - 1]
 
-    let private decodeParagraphContent (bytes: byte[]) =
+    let private decodeParagraphContent (qf: QuillFile) (bytes: byte[]) =
         let mutable style = defaultStyle
         let sb = StringBuilder()
         let items = ResizeArray<Inline>()
@@ -121,12 +128,16 @@ module QuillDecode =
                 flush ()
                 style <- { style with Super = not style.Super; Sub = false }
 
+            | Italic ->
+                flush ()
+                style <- { style with Italic = not style.Italic }
+
             | SoftHyphen ->
                 flush ()
                 items.Add(RunSoftHyphen style)
 
             | _ ->
-                let s = qlCharToUnicode b
+                let s = qlCharToUnicode qf.IsPcFile b
                 if not (String.IsNullOrEmpty s) then
                     sb.Append(s) |> ignore
 
@@ -170,7 +181,7 @@ module QuillDecode =
         let current = ResizeArray<byte>()
         let mutable index = 0
         let flushParagraph () =
-            let content = decodeParagraphContent (current.ToArray())
+            let content = decodeParagraphContent qf (current.ToArray())
             if not content.IsEmpty then
                 paras.Add(
                     { Index = index
@@ -202,7 +213,7 @@ module QuillDecode =
                     Some
                         { Index = i
                           Descriptor = p
-                          Content = decodeParagraphContent bytes }
+                          Content = decodeParagraphContent qf bytes }
                 with _ ->
                     None)
             |> Array.choose id
