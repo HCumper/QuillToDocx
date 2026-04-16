@@ -55,7 +55,7 @@ module HtmlWriter =
         builder.ToString()
 
     let private textAlignment justification =
-        match int justification with
+        match int (justification &&& 0x0Fuy) with
         | 1
         | 5 -> "center"
         | 2

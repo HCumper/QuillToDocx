@@ -180,9 +180,9 @@ module QuillDecode =
         let paras = ResizeArray<DecodedParagraph>()
         let current = ResizeArray<byte>()
         let mutable index = 0
-        let flushParagraph () =
+        let flushParagraph allowEmpty =
             let content = decodeParagraphContent qf (current.ToArray())
-            if not content.IsEmpty then
+            if allowEmpty || not content.IsEmpty then
                 paras.Add(
                     { Index = index
                       Descriptor = fallbackParagraphDescriptor index
@@ -193,14 +193,14 @@ module QuillDecode =
         for b in qf.TextBuffer do
             match b with
             | EndText ->
-                flushParagraph ()
+                flushParagraph (current.Count > 0 || index > 0)
             | EndPara ->
-                flushParagraph ()
+                flushParagraph (current.Count > 0 || index > 0)
             | _ ->
                 current.Add(b)
 
         if current.Count > 0 then
-            flushParagraph ()
+            flushParagraph false
 
         paras |> Seq.toList
 

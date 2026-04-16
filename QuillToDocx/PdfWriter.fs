@@ -53,7 +53,7 @@ module PdfWriter =
         FontSizePt * 0.6
 
     let private mapJustification j =
-        match int j with
+        match int (j &&& 0x0Fuy) with
         | 1
         | 5 -> "center"
         | 2
