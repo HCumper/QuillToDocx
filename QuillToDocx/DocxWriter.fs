@@ -102,9 +102,9 @@ module DocxWriter =
     let private runProps (s: TextStyle) =
         let rp = RunProperties()
         rp.AppendChild(RunFonts(Ascii = DefaultFontName, HighAnsi = DefaultFontName, ComplexScript = DefaultFontName)) |> ignore
-        rp.AppendChild(FontSize(Val = StringValue(DefaultFontSize))) |> ignore
         if s.Bold then rp.AppendChild(Bold()) |> ignore
         if s.Italic then rp.AppendChild(Italic()) |> ignore
+        rp.AppendChild(FontSize(Val = StringValue(DefaultFontSize))) |> ignore
         if s.Underline then rp.AppendChild(Underline(Val = UnderlineValues.Single)) |> ignore
         if s.Sub then rp.AppendChild(VerticalTextAlignment(Val = VerticalPositionValues.Subscript)) |> ignore
         if s.Super then rp.AppendChild(VerticalTextAlignment(Val = VerticalPositionValues.Superscript)) |> ignore
@@ -139,8 +139,6 @@ module DocxWriter =
         let pp = ParagraphProperties()
 
         pp.AppendChild(ParagraphStyleId(Val = "Normal")) |> ignore
-        pp.AppendChild(Justification(Val = mapJustification p.Justif)) |> ignore
-        pp.AppendChild(paragraphSpacing qf.Layout) |> ignore
 
         let left = twipsFromCols (int p.LeftMarg)
         let right = twipsFromCols (max 0 (80 - int p.RightMarg))
@@ -149,11 +147,14 @@ module DocxWriter =
         let ind = Indentation(Left = StringValue(left.ToString()))
         if right > 0 then ind.Right <- StringValue(right.ToString())
         if firstLine > 0 then ind.FirstLine <- StringValue(firstLine.ToString())
-        pp.AppendChild(ind) |> ignore
 
         match tabStopsForParagraph qf p with
         | Some tabs -> pp.AppendChild(tabs) |> ignore
         | None -> ()
+
+        pp.AppendChild(paragraphSpacing qf.Layout) |> ignore
+        pp.AppendChild(ind) |> ignore
+        pp.AppendChild(Justification(Val = mapJustification p.Justif)) |> ignore
 
         pp
 
@@ -207,8 +208,8 @@ module DocxWriter =
         let para = Paragraph()
         let pp = ParagraphProperties()
         pp.AppendChild(ParagraphStyleId(Val = "Normal")) |> ignore
-        pp.AppendChild(Justification(Val = justify)) |> ignore
         pp.AppendChild(paragraphSpacing layout) |> ignore
+        pp.AppendChild(Justification(Val = justify)) |> ignore
         para.AppendChild(pp) |> ignore
 
         let items2 =
