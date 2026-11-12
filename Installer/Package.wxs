@@ -1,0 +1,70 @@
+<!-- Per-machine installer for QuillToDocx and its Word import converter (64-bit Word). -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="QuillToDocx"
+           Manufacturer="Hugh Cumper"
+           Version="$(var.Version)"
+           UpgradeCode="D1CF454A-ABE1-4B6D-A99A-01E6AD0E862B"
+           Scope="perMachine">
+    <SummaryInformation Description="Opens Sinclair QL Quill documents in Microsoft Word" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/HCumper/QuillToDocx" />
+    <Property Id="ARPCOMMENTS" Value="Opens Sinclair QL Quill documents in Microsoft Word" />
+
+    <!-- Click-to-Run Office (Microsoft 365) records its bitness here. -->
+    <Property Id="C2RPLATFORM">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\Office\ClickToRun\Configuration" Name="Platform" Type="raw" />
+    </Property>
+    <Launch Condition="Installed OR NOT (C2RPLATFORM = &quot;x86&quot;)"
+            Message="[ProductName] needs 64-bit Microsoft Word, and the Office installed here is 32-bit." />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="QuillToDocx" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="ProgramFiles" Directory="INSTALLFOLDER">
+      <Component>
+        <File Source="$(var.BinDir)QuillCnv.cnv" />
+      </Component>
+      <Component>
+        <File Source="$(var.BinDir)QuillToDocx.exe" />
+      </Component>
+      <Component>
+        <File Source="$(var.RootDir)LICENSE" Name="LICENSE.txt" />
+      </Component>
+      <Component>
+        <File Source="$(var.RootDir)THIRD-PARTY-NOTICES.txt" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Word reads text converters only from HKLM. Click-to-Run Office keeps its own
+         converters in a virtual copy of HKLM, so register there as well when it is present. -->
+    <ComponentGroup Id="ConverterRegistration" Directory="INSTALLFOLDER">
+      <Component Id="RegisterConverter">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Shared Tools\Text Converters\Import\Quill" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="Name" Type="string" Value="Sinclair QL Quill" KeyPath="yes" />
+          <RegistryValue Name="Path" Type="string" Value="[INSTALLFOLDER]QuillCnv.cnv" />
+          <RegistryValue Name="Extensions" Type="string" Value="doc" />
+        </RegistryKey>
+      </Component>
+      <Component Id="RegisterConverterClickToRun" Condition="C2RPLATFORM">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\Software\Microsoft\Shared Tools\Text Converters\Import\Quill" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="Name" Type="string" Value="Sinclair QL Quill" KeyPath="yes" />
+          <RegistryValue Name="Path" Type="string" Value="[INSTALLFOLDER]QuillCnv.cnv" />
+          <RegistryValue Name="Extensions" Type="string" Value="doc" />
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="ProgramFiles" />
+      <ComponentGroupRef Id="ConverterRegistration" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+  </Package>
+</Wix>

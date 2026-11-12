@@ -80,7 +80,9 @@ type Inline =
 type DecodedParagraph =
     { Index: int
       Descriptor: ParaTable
-      Content: Inline list }
+      Content: Inline list
+      /// A stand-alone form-feed paragraph came before this one.
+      PageBreakBefore: bool }
 
 type DecodedDocument =
     { HeaderParagraph: DecodedParagraph option

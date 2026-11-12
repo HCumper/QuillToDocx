@@ -16,86 +16,32 @@ module DocxWriter =
     [<Literal>]
     let private DefaultFontSize = "20"
 
-    [<Literal>]
-    let private DefaultParagraphAfter = "80"
-
-    [<Literal>]
-    let private DefaultLineSpacing = "240"
-
-    [<Literal>]
-    let private DefaultPageMargin = 1440
-
-    [<Literal>]
-    let private DefaultHeaderFooterMargin = 720
-
-    [<Literal>]
-    let private DefaultPageWidth = 12480
-
-    [<Literal>]
-    let private DefaultPageHeight = 15840
-
-    [<Literal>]
-    let private DefaultBodyWidthCols = 80
-
-    let private twipsFromCols cols =
-        cols * 120
-
-    let private clampTwips defaultValue minValue maxValue rawValue =
-        if rawValue >= minValue && rawValue <= maxValue then
-            rawValue
-        else
-            defaultValue
-
-    let private validatedPageMargin rawValue =
-        clampTwips DefaultPageMargin 720 2880 rawValue
-
-    let private validatedHeaderFooterMargin rawValue =
-        clampTwips DefaultHeaderFooterMargin 240 1440 rawValue
-
-    let private lineSpacingTwips (layout: LayoutTable) =
-        clampTwips 240 200 480 (240 + (int layout.LineGap * 10))
-
-    let private paragraphAfterTwips (layout: LayoutTable) =
-        clampTwips 80 0 240 (lineSpacingTwips layout / 3)
-
     let private paragraphSpacing (layout: LayoutTable) =
         SpacingBetweenLines(
             Before = StringValue("0"),
-            After = StringValue((paragraphAfterTwips layout).ToString()),
-            Line = StringValue((lineSpacingTwips layout).ToString()),
+            After = StringValue((QuillLayout.paragraphAfterTwips layout).ToString()),
+            Line = StringValue((QuillLayout.lineSpacingTwips layout).ToString()),
             LineRule = EnumValue(LineSpacingRuleValues.Auto))
 
-    let private pageHeightTwips (layout: LayoutTable) topMargin bottomMargin =
-        let candidate = topMargin + bottomMargin + (int layout.PageLen * lineSpacingTwips layout)
-        clampTwips DefaultPageHeight 10080 20160 candidate
-
-    let private pageWidthTwips leftMargin rightMargin =
-        clampTwips DefaultPageWidth 10080 15840 (leftMargin + rightMargin + twipsFromCols DefaultBodyWidthCols)
-
-    let private mapJustification j =
-        match int (j &&& 0x0Fuy) with
-        | 0
-        | 4 -> JustificationValues.Left
-        | 1
-        | 5 -> JustificationValues.Center
-        | 2
-        | 6 -> JustificationValues.Right
-        | _ -> JustificationValues.Left
+    let private justification alignment =
+        match alignment with
+        | QuillLayout.AlignLeft -> JustificationValues.Left
+        | QuillLayout.AlignCenter -> JustificationValues.Center
+        | QuillLayout.AlignRight -> JustificationValues.Right
 
     let private tabStopsForParagraph (qf: QuillFile) (p: ParaTable) =
-        qf.TabTables
-        |> List.tryFind (fun t -> t.EntryNumber = p.TabTable)
-        |> Option.map (fun t ->
+        QuillLayout.tabStops qf p
+        |> Option.map (fun stops ->
             let tabs = Tabs()
-            for e in t.Entries do
+            for position, kind in stops do
                 let stop =
                     TabStop(
-                        Position = Int32Value(twipsFromCols (int e.Pos)),
+                        Position = Int32Value(position),
                         Val =
-                            match int e.Type with
-                            | 1 -> TabStopValues.Center
-                            | 2 -> TabStopValues.Right
-                            | _ -> TabStopValues.Left)
+                            match kind with
+                            | QuillLayout.TabCenter -> TabStopValues.Center
+                            | QuillLayout.TabRight -> TabStopValues.Right
+                            | QuillLayout.TabLeft -> TabStopValues.Left)
                 tabs.AppendChild(stop) |> ignore
             tabs)
 
@@ -135,18 +81,19 @@ module DocxWriter =
             r.AppendChild(SoftHyphen()) |> ignore
             r
 
-    let private paraProps (qf: QuillFile) (p: ParaTable) =
+    let private paraProps (qf: QuillFile) (p: ParaTable) pageBreakBefore =
         let pp = ParagraphProperties()
 
         pp.AppendChild(ParagraphStyleId(Val = "Normal")) |> ignore
 
-        let left = twipsFromCols (int p.LeftMarg)
-        let right = twipsFromCols (max 0 (80 - int p.RightMarg))
-        let firstLine = twipsFromCols (max 0 (int p.IndentMarg - int p.LeftMarg))
+        // Schema order: pageBreakBefore follows pStyle and precedes tabs.
+        if pageBreakBefore then pp.AppendChild(PageBreakBefore()) |> ignore
 
-        let ind = Indentation(Left = StringValue(left.ToString()))
-        if right > 0 then ind.Right <- StringValue(right.ToString())
-        if firstLine > 0 then ind.FirstLine <- StringValue(firstLine.ToString())
+        let indents = QuillLayout.paragraphIndents p
+
+        let ind = Indentation(Left = StringValue(indents.LeftIndent.ToString()))
+        if indents.RightIndent > 0 then ind.Right <- StringValue(indents.RightIndent.ToString())
+        if indents.FirstLineIndent > 0 then ind.FirstLine <- StringValue(indents.FirstLineIndent.ToString())
 
         match tabStopsForParagraph qf p with
         | Some tabs -> pp.AppendChild(tabs) |> ignore
@@ -154,7 +101,7 @@ module DocxWriter =
 
         pp.AppendChild(paragraphSpacing qf.Layout) |> ignore
         pp.AppendChild(ind) |> ignore
-        pp.AppendChild(Justification(Val = mapJustification p.Justif)) |> ignore
+        pp.AppendChild(Justification(Val = justification (QuillLayout.paragraphAlignment p.Justif))) |> ignore
 
         pp
 
@@ -199,7 +146,7 @@ module DocxWriter =
 
     let private buildParagraph (qf: QuillFile) (p: DecodedParagraph) =
         let para = Paragraph()
-        para.AppendChild(paraProps qf p.Descriptor) |> ignore
+        para.AppendChild(paraProps qf p.Descriptor p.PageBreakBefore) |> ignore
         for item in p.Content do
             para.AppendChild(makeRun item) |> ignore
         para
@@ -227,11 +174,7 @@ module DocxWriter =
         para
 
     let private headerJustify flag =
-        match int flag with
-        | 1 -> JustificationValues.Left
-        | 2 -> JustificationValues.Center
-        | 3 -> JustificationValues.Right
-        | _ -> JustificationValues.Left
+        justification (QuillLayout.headerFooterAlignment flag)
 
     let writeDocx (qf: QuillFile) (doc: DecodedDocument) (outPath: string) =
         if IO.File.Exists outPath then
@@ -277,29 +220,22 @@ module DocxWriter =
             sect.AppendChild(FooterReference(Type = HeaderFooterValues.Default, Id = main.GetIdOfPart(part))) |> ignore
         | _ -> ()
 
-        let topMargin = validatedPageMargin (int qf.Layout.TopMargin * 240)
-        let bottomMargin = validatedPageMargin (int qf.Layout.BottomMarg * 240)
-        let leftMargin = DefaultPageMargin
-        let rightMargin = DefaultPageMargin
-        let headerMargin = validatedHeaderFooterMargin (int qf.Layout.HeaderMarg * 240)
-        let footerMargin = validatedHeaderFooterMargin (int qf.Layout.FooterMarg * 240)
-        let pageWidth = pageWidthTwips leftMargin rightMargin
-        let pageHeight = pageHeightTwips qf.Layout topMargin bottomMargin
+        let page = QuillLayout.pageGeometry qf.Layout
 
         let pageMargin =
             PageMargin(
-                Top = Int32Value(topMargin),
-                Bottom = Int32Value(bottomMargin),
-                Left = UInt32Value(uint32 leftMargin),
-                Right = UInt32Value(uint32 rightMargin),
-                Header = UInt32Value(uint32 headerMargin),
-                Footer = UInt32Value(uint32 footerMargin)
+                Top = Int32Value(page.TopMargin),
+                Bottom = Int32Value(page.BottomMargin),
+                Left = UInt32Value(uint32 page.LeftMargin),
+                Right = UInt32Value(uint32 page.RightMargin),
+                Header = UInt32Value(uint32 page.HeaderMargin),
+                Footer = UInt32Value(uint32 page.FooterMargin)
             )
 
         let pageSize =
             PageSize(
-                Width = UInt32Value(uint32 pageWidth),
-                Height = UInt32Value(uint32 pageHeight))
+                Width = UInt32Value(uint32 page.Width),
+                Height = UInt32Value(uint32 page.Height))
 
         sect.AppendChild(pageSize) |> ignore
         sect.AppendChild(pageMargin) |> ignore

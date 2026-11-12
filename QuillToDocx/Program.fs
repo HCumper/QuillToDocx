@@ -5,12 +5,14 @@ open System.IO
 
 module Program =
 
+    // QL names such as "report_doc" have no extension, so only add ".doc" to a basename
+    // when the name as given doesn't exist.
     let private resolveInputPath (inputPath: string) =
         let ext = Path.GetExtension(inputPath)
-        if String.IsNullOrWhiteSpace(ext) then inputPath + ".doc" else inputPath
+        if String.IsNullOrWhiteSpace(ext) && not (File.Exists inputPath) then inputPath + ".doc" else inputPath
 
     let private usage () =
-        eprintfn "Usage: QuillToDocx <input.doc> [output.docx|output.pdf|output.html|output.md]"
+        eprintfn "Usage: QuillToDocx <input.doc> [output.docx|output.rtf|output.pdf|output.html|output.md]"
         eprintfn "       QuillToDocx <basename>"
 
     let private resolvePaths (argv: string array) =
@@ -20,6 +22,7 @@ module Program =
 
             if
                 String.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase)
+                || String.Equals(ext, ".rtf", StringComparison.OrdinalIgnoreCase)
                 || String.Equals(ext, ".pdf", StringComparison.OrdinalIgnoreCase)
                 || String.Equals(ext, ".html", StringComparison.OrdinalIgnoreCase)
                 || String.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase)
@@ -60,10 +63,11 @@ module Program =
 
                     match outputExtension.ToLowerInvariant() with
                     | ".docx" -> DocxWriter.writeDocx parsed decoded outputPath
+                    | ".rtf" -> RtfWriter.writeRtf parsed decoded outputPath
                     | ".pdf" -> PdfWriter.writePdf parsed decoded outputPath
                     | ".html" -> HtmlWriter.writeHtml parsed decoded outputPath
                     | ".md" -> MarkdownWriter.writeMarkdown parsed decoded outputPath
-                    | _ -> failwithf "Unsupported output format '%s'. Use .docx, .pdf, .html, or .md." outputExtension
+                    | _ -> failwithf "Unsupported output format '%s'. Use .docx, .rtf, .pdf, .html, or .md." outputExtension
 
                     printfn "Converted '%s' to '%s'" inputPath outputPath
                     0

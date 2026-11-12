@@ -1,0 +1,9 @@
+EXPORTS
+    InitConverter32
+    UninitConverter
+    RegisterApp
+    GetReadNames
+    IsFormatCorrect32
+    ForeignToRtf32
+    CchFetchLpszError
+    FRegisterConverter

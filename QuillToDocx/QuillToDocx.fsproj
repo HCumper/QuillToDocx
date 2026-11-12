@@ -16,7 +16,9 @@
     <Compile Include="QuillBinary.fs" />
     <Compile Include="QuillParser.fs" />
     <Compile Include="QuillDecode.fs" />
+    <Compile Include="QuillLayout.fs" />
     <Compile Include="DocxWriter.fs" />
+    <Compile Include="RtfWriter.fs" />
     <Compile Include="PdfWriter.fs" />
     <Compile Include="HtmlWriter.fs" />
     <Compile Include="MarkdownWriter.fs" />

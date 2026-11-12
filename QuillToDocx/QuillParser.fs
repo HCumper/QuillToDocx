@@ -132,8 +132,12 @@ module QuillParser =
               Gran = 0us
               Used = uint16 usedParas
               Alloc = uint16 allocParas }
+        // Entry 0 is a dummy, so the table holds Used + 1 entries: the dummy, then the header,
+        // the footer and the body paragraphs. Reading only Used entries drops the last paragraph.
+        let entryCount = min (usedParas + 1) allocParas
+
         let paras =
-            Array.init usedParas (fun i ->
+            Array.init entryCount (fun i ->
                 let off = paraHeadOffset + paraHeadSize + (i * paraEntrySize)
                 readPara isPcFile bytes off)
 

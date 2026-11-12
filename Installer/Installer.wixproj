@@ -1,0 +1,13 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <!-- Builds QuillToDocx-<version>-x64.msi from the files WordConverter\build.cmd puts in
+       WordConverter\bin. Version comes from Directory.Build.props. -->
+  <PropertyGroup>
+    <OutputName>QuillToDocx-$(Version)-x64</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <DefineConstants>Version=$(Version);BinDir=$(MSBuildThisFileDirectory)..\WordConverter\bin\;RootDir=$(MSBuildThisFileDirectory)..\</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>

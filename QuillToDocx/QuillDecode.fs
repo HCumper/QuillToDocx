@@ -33,6 +33,26 @@ module QuillDecode =
     [<Literal>]
     let SoftHyphen = 0x1Euy
 
+    [<Literal>]
+    let FormFeed = 0x0Cuy
+
+    // Paragraph-table entry 0 is not a paragraph. Entries 1 and 2 are always the header and
+    // footer text, stored even when the layout table switches them off; the body starts at 3.
+    [<Literal>]
+    let private HeaderEntry = 1
+
+    [<Literal>]
+    let private FooterEntry = 2
+
+    [<Literal>]
+    let private FirstBodyEntry = 3
+
+    // .NET only ships code page 437 (PC Quill's character set) through the code-pages provider.
+    let private cp437 =
+        lazy
+            (Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)
+             Encoding.GetEncoding(437))
+
     let private defaultStyle =
         { Bold = false
           Italic = false
@@ -44,7 +64,7 @@ module QuillDecode =
         if b < 0x20uy then
             ""
         elif isPcFile then
-            Encoding.GetEncoding(437).GetString([| b |])
+            cp437.Value.GetString([| b |])
         else
             match int b with
             | x when x >= 0x20 && x <= 0x7E -> string (char x)
@@ -186,7 +206,8 @@ module QuillDecode =
                 paras.Add(
                     { Index = index
                       Descriptor = fallbackParagraphDescriptor index
-                      Content = content })
+                      Content = content
+                      PageBreakBefore = false })
                 index <- index + 1
             current.Clear()
 
@@ -204,49 +225,64 @@ module QuillDecode =
 
         paras |> Seq.toList
 
-    let decodeDocument (qf: QuillFile) =
-        let paras =
-            qf.Paras
-            |> Array.mapi (fun i p ->
-                try
-                    let bytes = getParagraphBytes qf p
-                    Some
-                        { Index = i
-                          Descriptor = p
-                          Content = decodeParagraphContent qf bytes }
-                with _ ->
-                    None)
-            |> Array.choose id
-            |> Array.toList
+    let private tryDecodeEntry (qf: QuillFile) index =
+        try
+            let p = qf.Paras[index]
+            let bytes = getParagraphBytes qf p
 
-        let parsedParasHaveContent = paras |> List.exists (fun p -> not p.Content.IsEmpty)
-        let paras =
-            if parsedParasHaveContent then
-                paras
+            Some(
+                bytes,
+                { Index = index
+                  Descriptor = p
+                  Content = decodeParagraphContent qf bytes
+                  PageBreakBefore = false }
+            )
+        with _ ->
+            None
+
+    let private isPageBreakParagraph (bytes: byte[]) (content: Inline list) =
+        Array.contains FormFeed bytes
+        && content
+           |> List.forall (function
+               | RunText (text, _) -> String.IsNullOrWhiteSpace text
+               | RunTab _
+               | RunSoftHyphen _ -> true)
+
+    /// Drops stand-alone form-feed paragraphs and marks the paragraph after each one.
+    let private applyPageBreaks (entries: (byte[] * DecodedParagraph) list) =
+        let folder (pending, acc) (bytes, para) =
+            if isPageBreakParagraph bytes para.Content then
+                true, acc
             else
-                decodeFromTextBuffer qf
+                false, { para with PageBreakBefore = pending } :: acc
 
-        let hasHeader = parsedParasHaveContent && qf.Layout.HeaderF <> 0uy
-        let hasFooter = parsedParasHaveContent && qf.Layout.FooterF <> 0uy
+        entries |> List.fold folder (false, []) |> snd |> List.rev
 
-        let headerPara =
-            if hasHeader && paras.Length >= 1 then Some paras[0] else None
+    let decodeDocument (qf: QuillFile) =
+        let entries =
+            [ for i in HeaderEntry .. qf.Paras.Length - 1 do
+                  match tryDecodeEntry qf i with
+                  | Some entry -> yield entry
+                  | None -> () ]
 
-        let footerIndex = if hasHeader then 1 else 0
+        let parsedParasHaveContent = entries |> List.exists (fun (_, p) -> not p.Content.IsEmpty)
 
-        let footerPara =
-            if hasFooter && paras.Length > footerIndex then Some paras[footerIndex] else None
+        if not parsedParasHaveContent then
+            { HeaderParagraph = None
+              FooterParagraph = None
+              BodyParagraphs = trimTrailingMarkerParagraphs (decodeFromTextBuffer qf)
+              Layout = qf.Layout }
+        else
+            let entryAt index =
+                entries |> List.tryFind (fun (_, p) -> p.Index = index) |> Option.map snd
 
-        let bodyStart =
-            (if hasHeader then 1 else 0) +
-            (if hasFooter then 1 else 0)
+            let body =
+                entries
+                |> List.filter (fun (_, p) -> p.Index >= FirstBodyEntry)
+                |> applyPageBreaks
+                |> trimTrailingMarkerParagraphs
 
-        let body =
-            if paras.Length <= bodyStart then [] else paras |> List.skip bodyStart
-
-        let body = trimTrailingMarkerParagraphs body
-
-        { HeaderParagraph = headerPara
-          FooterParagraph = footerPara
-          BodyParagraphs = body
-          Layout = qf.Layout }
+            { HeaderParagraph = if qf.Layout.HeaderF <> 0uy then entryAt HeaderEntry else None
+              FooterParagraph = if qf.Layout.FooterF <> 0uy then entryAt FooterEntry else None
+              BodyParagraphs = body
+              Layout = qf.Layout }
