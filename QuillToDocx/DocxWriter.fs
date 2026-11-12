@@ -28,6 +28,7 @@ module DocxWriter =
         | QuillLayout.AlignLeft -> JustificationValues.Left
         | QuillLayout.AlignCenter -> JustificationValues.Center
         | QuillLayout.AlignRight -> JustificationValues.Right
+        | QuillLayout.AlignJustify -> JustificationValues.Both
 
     let private tabStopsForParagraph (qf: QuillFile) (p: ParaTable) =
         QuillLayout.tabStops qf p

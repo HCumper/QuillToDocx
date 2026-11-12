@@ -55,19 +55,18 @@ module HtmlWriter =
         builder.ToString()
 
     let private textAlignment justification =
-        match int justification with
-        | 1
-        | 5 -> "center"
-        | 2
-        | 6 -> "right"
-        | _ -> "left"
+        match QuillLayout.paragraphAlignment justification with
+        | QuillLayout.AlignCenter -> "center"
+        | QuillLayout.AlignRight -> "right"
+        | QuillLayout.AlignJustify -> "justify"
+        | QuillLayout.AlignLeft -> "left"
 
     let private rightColumns (p: ParaTable) =
         if int p.RightMarg > int p.LeftMarg then int p.RightMarg else DefaultBodyWidthCols
 
     let private paragraphStyle (layout: LayoutTable) (p: ParaTable) =
         let leftCols = int p.LeftMarg
-        let firstCols = max leftCols (int p.IndentMarg)
+        let firstCols = leftCols + QuillLayout.firstLineIndentCols p
         let rightCols = rightColumns p
         let widthCols = max 20 (rightCols - leftCols)
         let leftPercent = (float leftCols / float DefaultBodyWidthCols) * 100.0

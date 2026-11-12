@@ -56,6 +56,7 @@ module RtfWriter =
         | AlignLeft -> @"\ql"
         | AlignCenter -> @"\qc"
         | AlignRight -> @"\qr"
+        | AlignJustify -> @"\qj"
 
     let private appendParagraphStart (sb: StringBuilder) (layout: LayoutTable) alignment =
         sb.Append(@"\pard\plain").Append(alignmentControl alignment) |> ignore

@@ -52,14 +52,6 @@ module PdfWriter =
     let private charWidthPt =
         FontSizePt * 0.6
 
-    let private mapJustification j =
-        match int j with
-        | 1
-        | 5 -> "center"
-        | 2
-        | 6 -> "right"
-        | _ -> "left"
-
     let private tabStopsForParagraph (qf: QuillFile) (p: ParaTable) =
         qf.TabTables
         |> List.tryFind (fun t -> t.EntryNumber = p.TabTable)
@@ -73,7 +65,7 @@ module PdfWriter =
 
     let private flattenParagraphText (qf: QuillFile) (p: DecodedParagraph) =
         let sb = StringBuilder()
-        let mutable currentCol = max (int p.Descriptor.LeftMarg) (int p.Descriptor.IndentMarg)
+        let mutable currentCol = int p.Descriptor.LeftMarg + QuillLayout.firstLineIndentCols p.Descriptor
         let tabStops = tabStopsForParagraph qf p.Descriptor
 
         for item in p.Content do
@@ -106,7 +98,7 @@ module PdfWriter =
 
     let private paragraphLines (qf: QuillFile) (p: DecodedParagraph) =
         let leftCols = int p.Descriptor.LeftMarg
-        let firstCols = max leftCols (int p.Descriptor.IndentMarg)
+        let firstCols = leftCols + QuillLayout.firstLineIndentCols p.Descriptor
         let rightCols =
             if int p.Descriptor.RightMarg > leftCols then
                 int p.Descriptor.RightMarg
@@ -141,17 +133,26 @@ module PdfWriter =
 
         sb.ToString()
 
-    let private lineCommand (_pageWidth: float) (leftMargin: float) (_rightMargin: float) (justification: string) (indentCols: int) (widthCols: int) (text: string) (y: float) =
+    let private lineCommand (_pageWidth: float) (leftMargin: float) (_rightMargin: float) (alignment: QuillLayout.Alignment) (isLastLine: bool) (indentCols: int) (widthCols: int) (text: string) (y: float) =
         let indentX = leftMargin + (float indentCols * charWidthPt)
         let availableWidth = max 0.0 (float widthCols * charWidthPt)
         let textWidth = float text.Length * charWidthPt
         let x =
-            match justification with
-            | "center" -> indentX + max 0.0 ((availableWidth - textWidth) / 2.0)
-            | "right" -> indentX + max 0.0 (availableWidth - textWidth)
-            | _ -> indentX
+            match alignment with
+            | QuillLayout.AlignCenter -> indentX + max 0.0 ((availableWidth - textWidth) / 2.0)
+            | QuillLayout.AlignRight -> indentX + max 0.0 (availableWidth - textWidth)
+            | QuillLayout.AlignLeft
+            | QuillLayout.AlignJustify -> indentX
 
-        sprintf "BT /F1 %.1f Tf 1 0 0 1 %.2f %.2f Tm (%s) Tj ET" FontSizePt x y (pdfEscape text)
+        // Justified lines (except a paragraph's last) spread the slack over their spaces.
+        let spaces = text |> Seq.filter (fun ch -> ch = ' ') |> Seq.length
+        let wordSpacing =
+            if alignment = QuillLayout.AlignJustify && not isLastLine && spaces > 0 then
+                max 0.0 ((availableWidth - textWidth) / float spaces)
+            else
+                0.0
+
+        sprintf "BT /F1 %.1f Tf %.3f Tw 1 0 0 1 %.2f %.2f Tm (%s) Tj ET" FontSizePt wordSpacing x y (pdfEscape text)
 
     let private renderPages (qf: QuillFile) (doc: DecodedDocument) =
         let topMarginTwips = validatedPageMargin (int qf.Layout.TopMargin * 240)
@@ -184,7 +185,7 @@ module PdfWriter =
 
         for paragraph in doc.BodyParagraphs do
             let lines = paragraphLines qf paragraph
-            let justification = mapJustification paragraph.Descriptor.Justif
+            let alignment = QuillLayout.paragraphAlignment paragraph.Descriptor.Justif
             let paragraphHeight =
                 if List.isEmpty lines then
                     lineAdvancePt + paragraphAfterPt
@@ -197,8 +198,9 @@ module PdfWriter =
             | [] ->
                 currentY <- currentY - lineAdvancePt - paragraphAfterPt
             | _ ->
-                for indentCols, widthCols, text in lines do
-                    currentCommands.Add(lineCommand pageWidthPt leftMarginPt rightMarginPt justification indentCols widthCols text currentY)
+                for index, (indentCols, widthCols, text) in List.indexed lines do
+                    let isLastLine = index = lines.Length - 1
+                    currentCommands.Add(lineCommand pageWidthPt leftMarginPt rightMarginPt alignment isLastLine indentCols widthCols text currentY)
                     currentY <- currentY - lineAdvancePt
 
                 currentY <- currentY - paragraphAfterPt

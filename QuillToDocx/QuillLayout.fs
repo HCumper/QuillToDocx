@@ -8,6 +8,7 @@ module QuillLayout =
         | AlignLeft
         | AlignCenter
         | AlignRight
+        | AlignJustify
 
     type TabKind =
         | TabLeft
@@ -75,19 +76,30 @@ module QuillLayout =
           HeaderMargin = clampTwips DefaultHeaderFooterMargin 240 1440 (int layout.HeaderMarg * 240)
           FooterMargin = clampTwips DefaultHeaderFooterMargin 240 1440 (int layout.FooterMarg * 240) }
 
-    let paragraphIndents (p: ParaTable) =
-        { LeftIndent = twipsFromCols (int p.LeftMarg)
-          RightIndent = twipsFromCols (max 0 (DefaultBodyWidthCols - int p.RightMarg))
-          FirstLineIndent = twipsFromCols (max 0 (int p.IndentMarg - int p.LeftMarg)) }
-
-    /// QL Quill uses 0-2 for left/centre/right, PC Quill 4-6.
+    /// QL Quill uses 0-2 for left/centre/right, PC Quill 4-6 (the top four bits hold line
+    /// spacing). Quill's "right" justification is the old word-processor sense: lines flush to
+    /// both margins, i.e. justified. Prose paragraphs use it throughout the corpus, with
+    /// headings centred; true right alignment would put whole manuals against the right margin.
     let paragraphAlignment (justif: byte) =
         match int (justif &&& 0x0Fuy) with
         | 1
         | 5 -> AlignCenter
         | 2
-        | 6 -> AlignRight
+        | 6 -> AlignJustify
         | _ -> AlignLeft
+
+    /// Columns the first line starts to the right of the left margin. Centred paragraphs are
+    /// centred between the left and right margins: applying the indent margin as well would push
+    /// headings off centre (by half the indent, which some documents set to 20+ columns).
+    let firstLineIndentCols (p: ParaTable) =
+        match paragraphAlignment p.Justif with
+        | AlignCenter -> 0
+        | _ -> max 0 (int p.IndentMarg - int p.LeftMarg)
+
+    let paragraphIndents (p: ParaTable) =
+        { LeftIndent = twipsFromCols (int p.LeftMarg)
+          RightIndent = twipsFromCols (max 0 (DefaultBodyWidthCols - int p.RightMarg))
+          FirstLineIndent = twipsFromCols (firstLineIndentCols p) }
 
     /// Layout-table header/footer justification: 0 none (not printed), 1 left, 2 centre, 3 right.
     let headerFooterAlignment (flag: byte) =
