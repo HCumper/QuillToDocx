@@ -50,6 +50,25 @@ module RtfWriter =
         | RunSoftHyphen style ->
             openGroup style |> ignore
             sb.Append(@"\-}") |> ignore
+        | RunPageBreak -> sb.Append(@"{\page}") |> ignore
+
+    let private appendPageField (sb: StringBuilder) style pageStyle =
+        sb.Append('{').Append(styleControls style).Append(@"{\field{\*\fldinst ") |> ignore
+        // Escaping doubles the backslash of a \* format switch, as RTF requires.
+        appendEscaped sb (pageFieldInstruction pageStyle)
+        sb.Append(@"}{\fldrslt 1}}}") |> ignore
+
+    /// Header and footer text, with Quill's page-number placeholders as PAGE fields. A header
+    /// can't break the page.
+    let private appendHeaderFooterRun (sb: StringBuilder) item =
+        match item with
+        | RunText (text, style) ->
+            for piece in headerFooterPieces text do
+                match piece with
+                | FixedText t -> appendRun sb (RunText(t, style))
+                | PageNumberField pageStyle -> appendPageField sb style pageStyle
+        | RunPageBreak -> ()
+        | other -> appendRun sb other
 
     let private alignmentControl alignment =
         match alignment with
@@ -70,7 +89,7 @@ module RtfWriter =
         let indents = paragraphIndents p.Descriptor
         sb.AppendFormat(@"\li{0}", indents.LeftIndent) |> ignore
         if indents.RightIndent > 0 then sb.AppendFormat(@"\ri{0}", indents.RightIndent) |> ignore
-        if indents.FirstLineIndent > 0 then sb.AppendFormat(@"\fi{0}", indents.FirstLineIndent) |> ignore
+        if indents.FirstLineIndent <> 0 then sb.AppendFormat(@"\fi{0}", indents.FirstLineIndent) |> ignore
 
         match tabStops qf p.Descriptor with
         | Some stops ->
@@ -78,6 +97,7 @@ module RtfWriter =
                 match kind with
                 | TabCenter -> sb.Append(@"\tqc") |> ignore
                 | TabRight -> sb.Append(@"\tqr") |> ignore
+                | TabDecimal -> sb.Append(@"\tqdec") |> ignore
                 | TabLeft -> ()
 
                 sb.AppendFormat(@"\tx{0}", position) |> ignore
@@ -102,8 +122,9 @@ module RtfWriter =
                     | RunText (t, s) -> RunText(t, { s with Bold = true })
                     | RunTab s -> RunTab { s with Bold = true }
                     | RunSoftHyphen s -> RunSoftHyphen { s with Bold = true }
+                    | RunPageBreak -> RunPageBreak
 
-            appendRun sb item
+            appendHeaderFooterRun sb item
 
         sb.Append(@"\par}").Append("\r\n") |> ignore
 

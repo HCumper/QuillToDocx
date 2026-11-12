@@ -42,6 +42,7 @@ module DocxWriter =
                             match kind with
                             | QuillLayout.TabCenter -> TabStopValues.Center
                             | QuillLayout.TabRight -> TabStopValues.Right
+                            | QuillLayout.TabDecimal -> TabStopValues.Decimal
                             | QuillLayout.TabLeft -> TabStopValues.Left)
                 tabs.AppendChild(stop) |> ignore
             tabs)
@@ -82,6 +83,19 @@ module DocxWriter =
             r.AppendChild(SoftHyphen()) |> ignore
             r
 
+        | RunPageBreak ->
+            let r = Run()
+            r.AppendChild(Break(Type = BreakValues.Page)) |> ignore
+            r
+
+    let private makePageField style pageStyle =
+        let field = SimpleField(Instruction = StringValue(" " + QuillLayout.pageFieldInstruction pageStyle + " "))
+        let r = Run()
+        r.AppendChild(runProps style) |> ignore
+        r.AppendChild(Text("1")) |> ignore
+        field.AppendChild(r) |> ignore
+        field
+
     let private paraProps (qf: QuillFile) (p: ParaTable) pageBreakBefore =
         let pp = ParagraphProperties()
 
@@ -94,7 +108,10 @@ module DocxWriter =
 
         let ind = Indentation(Left = StringValue(indents.LeftIndent.ToString()))
         if indents.RightIndent > 0 then ind.Right <- StringValue(indents.RightIndent.ToString())
-        if indents.FirstLineIndent > 0 then ind.FirstLine <- StringValue(indents.FirstLineIndent.ToString())
+        if indents.FirstLineIndent > 0 then
+            ind.FirstLine <- StringValue(indents.FirstLineIndent.ToString())
+        elif indents.FirstLineIndent < 0 then
+            ind.Hanging <- StringValue((-indents.FirstLineIndent).ToString())
 
         match tabStopsForParagraph qf p with
         | Some tabs -> pp.AppendChild(tabs) |> ignore
@@ -167,10 +184,19 @@ module DocxWriter =
                 |> List.map (function
                     | RunText (t, s) -> RunText(t, { s with Bold = true })
                     | RunTab s -> RunTab { s with Bold = true }
-                    | RunSoftHyphen s -> RunSoftHyphen { s with Bold = true })
+                    | RunSoftHyphen s -> RunSoftHyphen { s with Bold = true }
+                    | RunPageBreak -> RunPageBreak)
 
+        // Quill's page-number placeholders become PAGE fields. A header can't break the page.
         for i in items2 do
-            para.AppendChild(makeRun i) |> ignore
+            match i with
+            | RunText (text, style) ->
+                for piece in QuillLayout.headerFooterPieces text do
+                    match piece with
+                    | QuillLayout.FixedText t -> para.AppendChild(makeRun (RunText(t, style))) |> ignore
+                    | QuillLayout.PageNumberField pageStyle -> para.AppendChild(makePageField style pageStyle) |> ignore
+            | RunPageBreak -> ()
+            | other -> para.AppendChild(makeRun other) |> ignore
 
         para
 

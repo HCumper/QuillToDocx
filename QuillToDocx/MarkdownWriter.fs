@@ -58,6 +58,7 @@ module MarkdownWriter =
             applyHtmlStyleTags style withBold
         | RunTab _ -> "    "
         | RunSoftHyphen _ -> "&shy;"
+        | RunPageBreak -> ""
 
     let private renderParagraphContent (content: Inline list) =
         content
@@ -65,10 +66,7 @@ module MarkdownWriter =
         |> String.concat ""
 
     let private paragraphPrefix (p: ParaTable) =
-        let leftIndent = repeatText (max 0 (int p.LeftMarg)) " "
-        let firstIndentCount = max 0 (int p.IndentMarg - int p.LeftMarg)
-        let firstIndent = repeatText firstIndentCount " "
-        leftIndent + firstIndent
+        repeatText (int p.LeftMarg + QuillLayout.firstLineIndentCols p) " "
 
     let private renderParagraph (paragraph: DecodedParagraph) =
         paragraphPrefix paragraph.Descriptor + renderParagraphContent paragraph.Content

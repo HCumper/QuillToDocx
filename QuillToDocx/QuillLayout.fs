@@ -1,5 +1,7 @@
 namespace QuillToDocx
 
+open System.Text.RegularExpressions
+
 /// Page and paragraph geometry shared by the word-processor writers (DOCX and RTF).
 /// Quill measures in character columns; one column is 120 twips (12 characters per inch).
 module QuillLayout =
@@ -14,6 +16,16 @@ module QuillLayout =
         | TabLeft
         | TabCenter
         | TabRight
+        | TabDecimal
+
+    type PageNumberStyle =
+        | PageArabic
+        | PageAlphabetic
+        | PageRoman
+
+    type HeaderFooterPiece =
+        | FixedText of string
+        | PageNumberField of PageNumberStyle
 
     type PageGeometry =
         { Width: int
@@ -60,15 +72,19 @@ module QuillLayout =
     let paragraphAfterTwips (layout: LayoutTable) =
         clampTwips 80 0 240 (lineSpacingTwips layout / 3)
 
+    /// Quill counts the page length and the top and bottom margins in printer lines, six to the inch.
+    [<Literal>]
+    let private PrinterLineTwips = 240
+
     let pageGeometry (layout: LayoutTable) =
-        let topMargin = clampTwips DefaultPageMargin 720 2880 (int layout.TopMargin * 240)
-        let bottomMargin = clampTwips DefaultPageMargin 720 2880 (int layout.BottomMarg * 240)
+        let topMargin = clampTwips DefaultPageMargin 720 2880 (int layout.TopMargin * PrinterLineTwips)
+        let bottomMargin = clampTwips DefaultPageMargin 720 2880 (int layout.BottomMarg * PrinterLineTwips)
         let leftMargin = DefaultPageMargin
         let rightMargin = DefaultPageMargin
 
         { Width = clampTwips DefaultPageWidth 10080 15840 (leftMargin + rightMargin + twipsFromCols DefaultBodyWidthCols)
-          Height =
-            clampTwips DefaultPageHeight 10080 20160 (topMargin + bottomMargin + (int layout.PageLen * lineSpacingTwips layout))
+          // The page length is the whole sheet, margins included: 66 lines is 11 inches, 70 is A4.
+          Height = clampTwips DefaultPageHeight 10080 20160 (int layout.PageLen * PrinterLineTwips)
           TopMargin = topMargin
           BottomMargin = bottomMargin
           LeftMargin = leftMargin
@@ -88,13 +104,15 @@ module QuillLayout =
         | 6 -> AlignJustify
         | _ -> AlignLeft
 
-    /// Columns the first line starts to the right of the left margin. Centred paragraphs are
-    /// centred between the left and right margins: applying the indent margin as well would push
-    /// headings off centre (by half the indent, which some documents set to 20+ columns).
+    /// Columns the first line starts to the right of the left margin. The indent margin is an
+    /// absolute column, so it can lie left of the left margin: a hanging indent, which glossaries
+    /// use for "keyword at column 14, description from column 24". The result is then negative.
+    /// Centred paragraphs are centred between the left and right margins: applying the indent
+    /// margin as well would push headings off centre (some documents set it to 20+ columns).
     let firstLineIndentCols (p: ParaTable) =
         match paragraphAlignment p.Justif with
         | AlignCenter -> 0
-        | _ -> max 0 (int p.IndentMarg - int p.LeftMarg)
+        | _ -> int p.IndentMarg - int p.LeftMarg
 
     let paragraphIndents (p: ParaTable) =
         { LeftIndent = twipsFromCols (int p.LeftMarg)
@@ -108,6 +126,36 @@ module QuillLayout =
         | 3 -> AlignRight
         | _ -> AlignLeft
 
+    let private pageNumberPattern = Regex("nnn|aaa|rrr", RegexOptions.Compiled)
+
+    /// Quill prints the page number where header or footer text says nnn, as a letter for aaa
+    /// and in roman numerals for rrr.
+    let headerFooterPieces (text: string) =
+        let pieces = ResizeArray<HeaderFooterPiece>()
+        let mutable start = 0
+
+        for m in pageNumberPattern.Matches(text) do
+            if m.Index > start then pieces.Add(FixedText(text.Substring(start, m.Index - start)))
+
+            let style =
+                match m.Value with
+                | "aaa" -> PageAlphabetic
+                | "rrr" -> PageRoman
+                | _ -> PageArabic
+
+            pieces.Add(PageNumberField style)
+            start <- m.Index + m.Length
+
+        if start < text.Length then pieces.Add(FixedText(text.Substring(start)))
+        List.ofSeq pieces
+
+    /// The Word field that prints the page number in the given style.
+    let pageFieldInstruction style =
+        match style with
+        | PageArabic -> "PAGE"
+        | PageAlphabetic -> @"PAGE \* alphabetic"
+        | PageRoman -> @"PAGE \* roman"
+
     let tabStops (qf: QuillFile) (p: ParaTable) =
         qf.TabTables
         |> List.tryFind (fun t -> t.EntryNumber = p.TabTable)
@@ -117,6 +165,7 @@ module QuillLayout =
                       match int e.Type with
                       | 1 -> TabCenter
                       | 2 -> TabRight
+                      | 3 -> TabDecimal
                       | _ -> TabLeft
 
                   twipsFromCols (int e.Pos), kind ])

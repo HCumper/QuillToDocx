@@ -76,12 +76,15 @@ type Inline =
     | RunText of string * TextStyle
     | RunTab of TextStyle
     | RunSoftHyphen of TextStyle
+    /// A form feed inside a paragraph's text.
+    | RunPageBreak
 
 type DecodedParagraph =
     { Index: int
       Descriptor: ParaTable
       Content: Inline list
-      /// A stand-alone form-feed paragraph came before this one.
+      /// A form feed came before this paragraph's text, at the end of the previous paragraph,
+      /// or in a paragraph of its own.
       PageBreakBefore: bool }
 
 type DecodedDocument =

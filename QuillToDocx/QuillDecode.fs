@@ -60,47 +60,28 @@ module QuillDecode =
           Sub = false
           Super = false }
 
+    /// QL characters 0x80-0xBF: accented letters, Greek letters and arrows. 0xB5 was an odd
+    /// script mark in the original ROM; SMSQ/E made it the euro sign, which is how documents use it.
+    let private qlHighCharacters =
+        "\u00E4\u00E3\u00E5\u00E9\u00F6\u00F5\u00F8\u00FC\u00E7\u00F1\u00E6\u0153\u00E1\u00E0\u00E2\u00EB" // 80
+        + "\u00E8\u00EA\u00EF\u00ED\u00EC\u00EE\u00F3\u00F2\u00F4\u00FA\u00F9\u00FB\u00DF\u00A2\u00A5`" // 90
+        + "\u00C4\u00C3\u00C5\u00C9\u00D6\u00D5\u00D8\u00DC\u00C7\u00D1\u00C6\u0152\u03B1\u03B4\u03B8\u03BB" // A0
+        + "\u00B5\u03C0\u03C6\u00A1\u00BF\u20AC\u00A7\u00A4\u00AB\u00BB\u00B0\u00F7\u2190\u2192\u2191\u2193" // B0
+
     let private qlCharToUnicode (isPcFile: bool) (b: byte) =
         if b < 0x20uy then
             ""
         elif isPcFile then
             cp437.Value.GetString([| b |])
         else
+            // The QL set is ASCII except for 0x60 (pound) and 0x7F (copyright).
             match int b with
-            | x when x >= 0x20 && x <= 0x7E -> string (char x)
-            | 0x7F -> "\u00A3"
-            | 0x80 -> "\u00C4"
-            | 0x81 -> "\u00A3"
-            | 0x82 -> "\u00C5"
-            | 0x83 -> "\u00C9"
-            | 0x84 -> "\u00F6"
-            | 0x85 -> "\u00F5"
-            | 0x86 -> "\u00F8"
-            | 0x87 -> "\u00FC"
-            | 0x88 -> "\u00E7"
-            | 0x89 -> "\u00F1"
-            | 0x8A -> "\u00FD"
-            | 0x8B -> "\u0152"
-            | 0x8C -> "\u00E1"
-            | 0x8D -> "\u00E0"
-            | 0x8E -> "\u00E2"
-            | 0x8F -> "\u00EB"
-            | 0x90 -> "\u00E8"
-            | 0x91 -> "\u00EA"
-            | 0x92 -> "\u00EF"
-            | 0x93 -> "\u00ED"
-            | 0x94 -> "\u00EC"
-            | 0x95 -> "\u00EE"
-            | 0x96 -> "\u00F3"
-            | 0x97 -> "\u00F2"
-            | 0x98 -> "\u00F4"
-            | 0x99 -> "\u00FA"
-            | 0x9A -> "\u00F9"
-            | 0x9B -> "\u00FB"
-            | 0x9C -> "\u00DF"
-            | 0x9D -> "\u00A2"
-            | 0x9E -> "\u00A5"
-            | _ -> Encoding.GetEncoding("ISO-8859-1").GetString([| b |])
+            | 0x60 -> "\u00A3"
+            | 0x7F -> "\u00A9"
+            | x when x < 0x7F -> string (char x)
+            | x when x <= 0xBF -> string qlHighCharacters[x - 0x80]
+            // Not QL characters; the few files that use them hold Latin-1 text (0xE9 for e-acute).
+            | x -> string (char x)
 
     let private getParagraphBytes (qf: QuillFile) (p: ParaTable) =
         let start = int p.Offset - int qf.Header.HeaderLen
@@ -156,6 +137,10 @@ module QuillDecode =
                 flush ()
                 items.Add(RunSoftHyphen style)
 
+            | FormFeed ->
+                flush ()
+                items.Add(RunPageBreak)
+
             | _ ->
                 let s = qlCharToUnicode qf.IsPcFile b
                 if not (String.IsNullOrEmpty s) then
@@ -172,6 +157,7 @@ module QuillDecode =
             | RunText (text, _) -> sb.Append(text) |> ignore
             | RunTab _ -> sb.Append('\t') |> ignore
             | RunSoftHyphen _ -> sb.Append('\u00AD') |> ignore
+            | RunPageBreak -> ()
 
         sb.ToString().Trim()
 
@@ -228,35 +214,47 @@ module QuillDecode =
     let private tryDecodeEntry (qf: QuillFile) index =
         try
             let p = qf.Paras[index]
-            let bytes = getParagraphBytes qf p
 
-            Some(
-                bytes,
+            Some
                 { Index = index
                   Descriptor = p
-                  Content = decodeParagraphContent qf bytes
+                  Content = decodeParagraphContent qf (getParagraphBytes qf p)
                   PageBreakBefore = false }
-            )
         with _ ->
             None
 
-    let private isPageBreakParagraph (bytes: byte[]) (content: Inline list) =
-        Array.contains FormFeed bytes
-        && content
-           |> List.forall (function
-               | RunText (text, _) -> String.IsNullOrWhiteSpace text
-               | RunTab _
-               | RunSoftHyphen _ -> true)
+    let private isBlank item =
+        match item with
+        | RunText (text, _) -> String.IsNullOrWhiteSpace text
+        | RunTab _
+        | RunSoftHyphen _
+        | RunPageBreak -> true
 
-    /// Drops stand-alone form-feed paragraphs and marks the paragraph after each one.
-    let private applyPageBreaks (entries: (byte[] * DecodedParagraph) list) =
-        let folder (pending, acc) (bytes, para) =
-            if isPageBreakParagraph bytes para.Content then
-                true, acc
+    /// Quill's form feed is a page break. A paragraph holding nothing else is dropped. A break
+    /// before a paragraph's text, or after it, becomes a break before that paragraph or the next;
+    /// one inside the text stays where it is.
+    let private applyPageBreaks (paragraphs: DecodedParagraph list) =
+        let folder (pending, acc) (para: DecodedParagraph) =
+            let content = para.Content
+
+            if List.forall isBlank content then
+                if List.contains RunPageBreak content then
+                    true, acc
+                else
+                    false, { para with PageBreakBefore = pending } :: acc
             else
-                false, { para with PageBreakBefore = pending } :: acc
+                let leading = content |> List.takeWhile isBlank
+                let trailing = content |> List.rev |> List.takeWhile isBlank |> List.rev
+                let text = content |> List.skip leading.Length |> List.take (content.Length - leading.Length - trailing.Length)
+                let withoutBreaks = List.filter ((<>) RunPageBreak)
 
-        entries |> List.fold folder (false, []) |> snd |> List.rev
+                List.contains RunPageBreak trailing,
+                { para with
+                    Content = withoutBreaks leading @ text @ withoutBreaks trailing
+                    PageBreakBefore = pending || List.contains RunPageBreak leading }
+                :: acc
+
+        paragraphs |> List.fold folder (false, []) |> snd |> List.rev
 
     let decodeDocument (qf: QuillFile) =
         let entries =
@@ -265,7 +263,7 @@ module QuillDecode =
                   | Some entry -> yield entry
                   | None -> () ]
 
-        let parsedParasHaveContent = entries |> List.exists (fun (_, p) -> not p.Content.IsEmpty)
+        let parsedParasHaveContent = entries |> List.exists (fun p -> not p.Content.IsEmpty)
 
         if not parsedParasHaveContent then
             { HeaderParagraph = None
@@ -274,11 +272,11 @@ module QuillDecode =
               Layout = qf.Layout }
         else
             let entryAt index =
-                entries |> List.tryFind (fun (_, p) -> p.Index = index) |> Option.map snd
+                entries |> List.tryFind (fun p -> p.Index = index)
 
             let body =
                 entries
-                |> List.filter (fun (_, p) -> p.Index >= FirstBodyEntry)
+                |> List.filter (fun p -> p.Index >= FirstBodyEntry)
                 |> applyPageBreaks
                 |> trimTrailingMarkerParagraphs
 

@@ -51,6 +51,7 @@ module HtmlWriter =
             | RunText (text, style) -> appendStyledSpan builder text style
             | RunTab _ -> builder.Append("<span class=\"tab\"></span>") |> ignore
             | RunSoftHyphen _ -> builder.Append("&shy;") |> ignore
+            | RunPageBreak -> ()
 
         builder.ToString()
 
@@ -71,7 +72,8 @@ module HtmlWriter =
         let widthCols = max 20 (rightCols - leftCols)
         let leftPercent = (float leftCols / float DefaultBodyWidthCols) * 100.0
         let widthPercent = (float widthCols / float DefaultBodyWidthCols) * 100.0
-        let indentEm = float (max 0 (firstCols - leftCols))
+        // Negative for a hanging indent.
+        let indentEm = float (firstCols - leftCols)
         let lineHeight = lineSpacingPercent layout
         let marginBottom = paragraphAfterEm layout
 

@@ -1,7 +1,7 @@
 <Project>
   <!-- One version for QuillToDocx.exe, the Word converter DLL (via WordConverter\build.cmd) and the MSI. -->
   <PropertyGroup>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Authors>Hugh Cumper</Authors>
     <Company>Hugh Cumper</Company>
     <Product>QuillToDocx</Product>

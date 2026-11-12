@@ -13,38 +13,7 @@ module PdfWriter =
     let private FontSizePt = 10.0
 
     [<Literal>]
-    let private DefaultPageMarginTwips = 1440
-
-    [<Literal>]
-    let private DefaultPageWidthTwips = 12480
-
-    [<Literal>]
-    let private DefaultPageHeightTwips = 15840
-
-    [<Literal>]
     let private DefaultBodyWidthCols = 80
-
-    let private twipsFromCols cols =
-        cols * 120
-
-    let private clampTwips defaultValue minValue maxValue rawValue =
-        if rawValue >= minValue && rawValue <= maxValue then rawValue else defaultValue
-
-    let private validatedPageMargin rawValue =
-        clampTwips DefaultPageMarginTwips 720 2880 rawValue
-
-    let private lineSpacingTwips (layout: LayoutTable) =
-        clampTwips 240 200 480 (240 + (int layout.LineGap * 10))
-
-    let private paragraphAfterTwips (layout: LayoutTable) =
-        clampTwips 80 0 240 (lineSpacingTwips layout / 3)
-
-    let private pageHeightTwips (layout: LayoutTable) topMargin bottomMargin =
-        let candidate = topMargin + bottomMargin + (int layout.PageLen * lineSpacingTwips layout)
-        clampTwips DefaultPageHeightTwips 10080 20160 candidate
-
-    let private pageWidthTwips leftMargin rightMargin =
-        clampTwips DefaultPageWidthTwips 10080 15840 (leftMargin + rightMargin + twipsFromCols DefaultBodyWidthCols)
 
     let private pointsFromTwips twips =
         float twips / 20.0
@@ -81,6 +50,7 @@ module PdfWriter =
             | RunSoftHyphen _ ->
                 sb.Append('-') |> ignore
                 currentCol <- currentCol + 1
+            | RunPageBreak -> ()
 
         sb.ToString()
 
@@ -155,19 +125,15 @@ module PdfWriter =
         sprintf "BT /F1 %.1f Tf %.3f Tw 1 0 0 1 %.2f %.2f Tm (%s) Tj ET" FontSizePt wordSpacing x y (pdfEscape text)
 
     let private renderPages (qf: QuillFile) (doc: DecodedDocument) =
-        let topMarginTwips = validatedPageMargin (int qf.Layout.TopMargin * 240)
-        let bottomMarginTwips = validatedPageMargin (int qf.Layout.BottomMarg * 240)
-        let leftMarginTwips = DefaultPageMarginTwips
-        let rightMarginTwips = DefaultPageMarginTwips
-
-        let pageWidthPt = pointsFromTwips (pageWidthTwips leftMarginTwips rightMarginTwips)
-        let pageHeightPt = pointsFromTwips (pageHeightTwips qf.Layout topMarginTwips bottomMarginTwips)
-        let leftMarginPt = pointsFromTwips leftMarginTwips
-        let rightMarginPt = pointsFromTwips rightMarginTwips
-        let topMarginPt = pointsFromTwips topMarginTwips
-        let bottomMarginPt = pointsFromTwips bottomMarginTwips
-        let lineAdvancePt = pointsFromTwips (lineSpacingTwips qf.Layout)
-        let paragraphAfterPt = pointsFromTwips (paragraphAfterTwips qf.Layout)
+        let page = QuillLayout.pageGeometry qf.Layout
+        let pageWidthPt = pointsFromTwips page.Width
+        let pageHeightPt = pointsFromTwips page.Height
+        let leftMarginPt = pointsFromTwips page.LeftMargin
+        let rightMarginPt = pointsFromTwips page.RightMargin
+        let topMarginPt = pointsFromTwips page.TopMargin
+        let bottomMarginPt = pointsFromTwips page.BottomMargin
+        let lineAdvancePt = pointsFromTwips (QuillLayout.lineSpacingTwips qf.Layout)
+        let paragraphAfterPt = pointsFromTwips (QuillLayout.paragraphAfterTwips qf.Layout)
 
         let pages = ResizeArray<string>()
         let currentCommands = ResizeArray<string>()
