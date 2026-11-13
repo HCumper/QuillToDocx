@@ -1,7 +1,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-Removes the Quill import converter installed by Install-QuillConverter.ps1.
+Removes the Quill text converter installed by Install-QuillConverter.ps1.
 Close Word first: Word keeps the converter loaded while it runs.
 #>
 param(
@@ -10,10 +10,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$keys = @(
-    'HKLM:\SOFTWARE\Microsoft\Shared Tools\Text Converters\Import\Quill',
-    'HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\Software\Microsoft\Shared Tools\Text Converters\Import\Quill'
-)
+$keys = foreach ($direction in 'Import', 'Export') {
+    "HKLM:\SOFTWARE\Microsoft\Shared Tools\Text Converters\$direction\Quill"
+    "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\Software\Microsoft\Shared Tools\Text Converters\$direction\Quill"
+}
 foreach ($key in $keys) {
     if (Test-Path $key) {
         Remove-Item $key

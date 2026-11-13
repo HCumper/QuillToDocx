@@ -1,13 +1,14 @@
-// QuillCnv - Microsoft Word import converter for Sinclair QL Quill documents.
+// QuillCnv - Microsoft Word text converter for Sinclair QL Quill documents.
 //
 // Word loads registered text converters (.cnv DLLs) through the converter API described
 // in the WinWord Converter SDK (GC1039, convapi.h). When Word cannot read a file natively it
 // asks each converter's IsFormatCorrect32 whether it recognises the file, so a Quill ".doc"
 // is detected by its contents even though Word's own .doc format shares the extension.
 //
-// The conversion itself is done by QuillToDocx.exe (installed next to this DLL), which
-// writes RTF; ForeignToRtf32 streams that RTF to Word. Import only: Word saves the
-// document in its own formats.
+// The conversions themselves are done by QuillToDocx.exe (installed next to this DLL).
+// Opening: it writes RTF, which ForeignToRtf32 streams to Word. Saving: RtfToForeign32
+// collects the RTF Word streams and has it write a Quill document, keeping the file it
+// replaces the first time as <name>.bak.
 
 #include <windows.h>
 
@@ -21,6 +22,7 @@ typedef short FCE;
 #define fceNoErr 0
 #define fceOpenInFileErr (-1)
 #define fceReadErr (-2)
+#define fceWriteErr (-4)
 #define fceInvalidFile (-5)
 #define fceNoMemory (-8)
 #define fceUserCancel (-13)
@@ -33,6 +35,10 @@ typedef short FCE;
 #define RegAppOpcodeVer 0x01
 #define RegAppOpcodeDocfile 0x02
 #define RegAppOpcodeCharset 0x03
+
+// Opcodes in the REGAPP block Word passes to RegisterApp.
+#define RegAppOpcodeFilename 0x80     // true final filename of an exported file
+#define RegAppOpcodeInterimPath 0x81  // the path being exported to is not the final location
 
 typedef long(PASCAL* PFN_RTF)(long cchBuff, long nPercent);
 
@@ -66,6 +72,8 @@ namespace
     UINT g_filenameCodePage = CP_OEMCP;
     FCE g_lastError = fceNoErr;
     char g_lastMessage[512] = "";
+    // When Word saves through an interim file, RegisterApp names the file being replaced.
+    std::wstring g_finalFilename;
 
     std::wstring ModuleDirectory()
     {
@@ -201,14 +209,15 @@ namespace
         return std::wstring(dir) + name;
     }
 
-    // Runs QuillToDocx.exe <input> <output.rtf> without a console window.
-    FCE RunConverter(const std::wstring& input, const std::wstring& output)
+    // Runs QuillToDocx.exe <input> <output> [options] without a console window.
+    FCE RunConverter(const std::wstring& input, const std::wstring& output, const wchar_t* options,
+                     FCE failure, const char* failureMessage)
     {
         std::wstring exe = ModuleDirectory() + L"\\QuillToDocx.exe";
         if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES)
             return Fail(fceOpenInFileErr, "QuillToDocx.exe is missing from the converter's folder.");
 
-        std::wstring cmd = L"\"" + exe + L"\" \"" + input + L"\" \"" + output + L"\"";
+        std::wstring cmd = L"\"" + exe + L"\" \"" + input + L"\" \"" + output + L"\" " + options;
         STARTUPINFOW si = {};
         si.cb = sizeof(si);
         si.dwFlags = STARTF_USESHOWWINDOW;
@@ -229,10 +238,62 @@ namespace
         CloseHandle(pi.hProcess);
 
         if (wait != WAIT_OBJECT_0)
-            return Fail(fceReadErr, "QuillToDocx.exe timed out.");
+            return Fail(failure, "QuillToDocx.exe timed out.");
         if (exitCode != 0)
-            return Fail(fceInvalidFile, "QuillToDocx.exe could not convert this Quill document.");
+            return Fail(failure, failureMessage);
         return fceNoErr;
+    }
+
+    bool WriteWholeFile(const std::wstring& path, const std::string& data)
+    {
+        HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (f == INVALID_HANDLE_VALUE)
+            return false;
+        DWORD written = 0;
+        bool ok = data.empty() || (WriteFile(f, data.data(), (DWORD)data.size(), &written, nullptr) && written == data.size());
+        CloseHandle(f);
+        return ok;
+    }
+
+    // The first time a file is replaced, its original is kept as <name>.bak: a Quill document
+    // written by Word can't carry everything the original held (italic, fonts, pictures...).
+    void BackUpOnce(const std::wstring& path)
+    {
+        if (path.empty() || GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+            return;
+        std::wstring backup = path + L".bak";
+        if (GetFileAttributesW(backup.c_str()) != INVALID_FILE_ATTRIBUTES)
+            return;
+        BOOL ok = CopyFileW(path.c_str(), backup.c_str(), TRUE);
+        Log("backup %s -> %s", Utf8(backup).c_str(), ok ? "made" : "failed");
+    }
+
+    // Word passes RegisterApp a REGAPP block of [size][opcode][data] entries after a short
+    // length. Saving through an interim file, it names the file really being replaced.
+    void ReadRegApp(const void* lpFuture)
+    {
+        g_finalFilename.clear();
+        if (!lpFuture)
+            return;
+        const unsigned char* p = (const unsigned char*)lpFuture;
+        short cb = *(const short*)p;
+        if (cb < 2 || cb > 4096)
+            return;
+        for (int pos = 2; pos + 2 <= cb;)
+        {
+            unsigned char size = p[pos];
+            unsigned char opcode = p[pos + 1];
+            if (size < 2 || pos + size > cb)
+                break;
+            Log("RegisterApp opcode 0x%02x, %d bytes", opcode, size);
+            if (opcode == RegAppOpcodeFilename && size > 2)
+            {
+                std::string name((const char*)p + pos + 2, size - 2);
+                g_finalFilename = Decode(name.c_str(), g_filenameCodePage);
+                Log("final filename %s", Utf8(g_finalFilename).c_str());
+            }
+            pos += size;
+        }
     }
 
     bool ReadWholeFile(const std::wstring& path, std::string& out)
@@ -308,11 +369,12 @@ extern "C" void PASCAL UninitConverter(void)
     Log("UninitConverter");
 }
 
-extern "C" HGLOBAL PASCAL RegisterApp(unsigned long lFlags, void* /*lpFuture*/)
+extern "C" HGLOBAL PASCAL RegisterApp(unsigned long lFlags, void* lpFuture)
 {
     bool ansiNames = (lFlags & fRegAppSupportNonOem) != 0;
     g_filenameCodePage = ansiNames ? CP_ACP : CP_OEMCP;
     Log("RegisterApp flags=0x%lx -> filenames in %s", lFlags, ansiNames ? "ANSI" : "OEM");
+    ReadRegApp(lpFuture);
 
     HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, sizeof(RegAppRet));
     if (!h)
@@ -365,7 +427,7 @@ extern "C" FCE PASCAL ForeignToRtf32(HANDLE ghszFile, void* /*pstgForeign*/, HAN
     if (rtfPath.empty())
         return Fail(fceOpenInFileErr, "No temporary folder.");
 
-    FCE fce = RunConverter(path, rtfPath);
+    FCE fce = RunConverter(path, rtfPath, L"", fceInvalidFile, "QuillToDocx.exe could not convert this Quill document.");
     std::string rtf;
     if (fce == fceNoErr && !ReadWholeFile(rtfPath, rtf))
         fce = Fail(fceReadErr, "Could not read the converted RTF.");
@@ -375,6 +437,53 @@ extern "C" FCE PASCAL ForeignToRtf32(HANDLE ghszFile, void* /*pstgForeign*/, HAN
 
     fce = StreamRtf(rtf, ghBuff, lpfnOut);
     Log("ForeignToRtf32 streamed %zu bytes, result %d", rtf.size(), fce);
+    return fce;
+}
+
+extern "C" void PASCAL GetWriteNames(HANDLE haszClass, HANDLE haszDescrip, HANDLE haszExt)
+{
+    SetGlobalString(haszClass, kClassName);
+    SetGlobalString(haszDescrip, kDescription);
+    SetGlobalString(haszExt, kExtensions);
+}
+
+// Word calls lpfnIn until it returns 0; each call leaves that many bytes of RTF in ghBuff.
+extern "C" FCE PASCAL RtfToForeign32(HANDLE ghszFile, void* /*pstgForeign*/, HANDLE ghBuff, HANDLE /*ghshClass*/,
+                                     PFN_RTF lpfnIn)
+{
+    std::wstring path = FileNameFromHandle(ghszFile);
+    Log("RtfToForeign32 %s", Utf8(path).c_str());
+    if (!ghBuff || !lpfnIn)
+        return Fail(fceNoMemory, "Word passed no RTF buffer or callback.");
+
+    std::string rtf;
+    for (;;)
+    {
+        long n = lpfnIn(0, 0);
+        if (n < 0)
+        {
+            Log("Word stopped the export (callback returned %ld)", n);
+            return (FCE)n;
+        }
+        if (n == 0)
+            break;
+        SIZE_T available = GlobalSize(ghBuff);
+        const char* p = (const char*)GlobalLock(ghBuff);
+        if (!p)
+            return Fail(fceNoMemory, "Could not lock Word's RTF buffer.");
+        rtf.append(p, (size_t)n < available ? (size_t)n : (size_t)available);
+        GlobalUnlock(ghBuff);
+    }
+    Log("RtfToForeign32 received %zu bytes of RTF", rtf.size());
+
+    std::wstring rtfPath = TempRtfPath();
+    if (rtfPath.empty() || !WriteWholeFile(rtfPath, rtf))
+        return Fail(fceWriteErr, "Could not write the RTF to a temporary file.");
+
+    BackUpOnce(g_finalFilename.empty() ? path : g_finalFilename);
+    FCE fce = RunConverter(rtfPath, path, L"--quill", fceWriteErr, "QuillToDocx.exe could not write the Quill document.");
+    DeleteFileW(rtfPath.c_str());
+    Log("RtfToForeign32 result %d", fce);
     return fce;
 }
 

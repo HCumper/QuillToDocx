@@ -1,4 +1,4 @@
-<!-- Per-machine installer for QuillToDocx and its Word import converter (64-bit Word). -->
+<!-- Per-machine installer for QuillToDocx and its Word text converter (64-bit Word). -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package Name="QuillToDocx"
@@ -6,13 +6,13 @@
            Version="$(var.Version)"
            UpgradeCode="D1CF454A-ABE1-4B6D-A99A-01E6AD0E862B"
            Scope="perMachine">
-    <SummaryInformation Description="Opens Sinclair QL Quill documents in Microsoft Word" />
+    <SummaryInformation Description="Opens and saves Sinclair QL Quill documents in Microsoft Word" />
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/HCumper/QuillToDocx" />
-    <Property Id="ARPCOMMENTS" Value="Opens Sinclair QL Quill documents in Microsoft Word" />
+    <Property Id="ARPCOMMENTS" Value="Opens and saves Sinclair QL Quill documents in Microsoft Word" />
 
     <!-- Click-to-Run Office (Microsoft 365) records its bitness here. -->
     <Property Id="C2RPLATFORM">
@@ -52,6 +52,23 @@
       </Component>
       <Component Id="RegisterConverterClickToRun" Condition="C2RPLATFORM">
         <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\Software\Microsoft\Shared Tools\Text Converters\Import\Quill" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="Name" Type="string" Value="Sinclair QL Quill" KeyPath="yes" />
+          <RegistryValue Name="Path" Type="string" Value="[INSTALLFOLDER]QuillCnv.cnv" />
+          <RegistryValue Name="Extensions" Type="string" Value="doc" />
+        </RegistryKey>
+      </Component>
+
+      <!-- The same converter saves: Word lists it under Save As and uses it to save a document
+           that was opened from a Quill file. -->
+      <Component Id="RegisterExportConverter">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Shared Tools\Text Converters\Export\Quill" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="Name" Type="string" Value="Sinclair QL Quill" KeyPath="yes" />
+          <RegistryValue Name="Path" Type="string" Value="[INSTALLFOLDER]QuillCnv.cnv" />
+          <RegistryValue Name="Extensions" Type="string" Value="doc" />
+        </RegistryKey>
+      </Component>
+      <Component Id="RegisterExportConverterClickToRun" Condition="C2RPLATFORM">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\Software\Microsoft\Shared Tools\Text Converters\Export\Quill" ForceDeleteOnUninstall="yes">
           <RegistryValue Name="Name" Type="string" Value="Sinclair QL Quill" KeyPath="yes" />
           <RegistryValue Name="Path" Type="string" Value="[INSTALLFOLDER]QuillCnv.cnv" />
           <RegistryValue Name="Extensions" Type="string" Value="doc" />

@@ -76,13 +76,30 @@ module QuillLayout =
     [<Literal>]
     let private PrinterLineTwips = 240
 
-    let pageGeometry (layout: LayoutTable) =
+    /// Word's widest page, 22 inches.
+    [<Literal>]
+    let private MaxPageWidth = 31680
+
+    /// Columns from the left margin to the document's widest right margin, at least 80: documents
+    /// for wide printers set right margins up to 170 columns. Entries with junk justification
+    /// (left-over memory in some files) don't count.
+    let bodyWidthCols (qf: QuillFile) =
+        let widest =
+            qf.Paras
+            |> Seq.skip (min 3 qf.Paras.Length)
+            |> Seq.filter (fun p -> List.contains (int (p.Justif &&& 0x0Fuy)) [ 0; 1; 2; 4; 5; 6 ])
+            |> Seq.map (fun p -> int p.RightMarg)
+            |> Seq.fold max DefaultBodyWidthCols
+
+        min widest ((MaxPageWidth - 2 * DefaultPageMargin) / 120)
+
+    let pageGeometry (layout: LayoutTable) (bodyCols: int) =
         let topMargin = clampTwips DefaultPageMargin 720 2880 (int layout.TopMargin * PrinterLineTwips)
         let bottomMargin = clampTwips DefaultPageMargin 720 2880 (int layout.BottomMarg * PrinterLineTwips)
         let leftMargin = DefaultPageMargin
         let rightMargin = DefaultPageMargin
 
-        { Width = clampTwips DefaultPageWidth 10080 15840 (leftMargin + rightMargin + twipsFromCols DefaultBodyWidthCols)
+        { Width = clampTwips DefaultPageWidth 10080 MaxPageWidth (leftMargin + rightMargin + twipsFromCols bodyCols)
           // The page length is the whole sheet, margins included: 66 lines is 11 inches, 70 is A4.
           Height = clampTwips DefaultPageHeight 10080 20160 (int layout.PageLen * PrinterLineTwips)
           TopMargin = topMargin
@@ -114,9 +131,9 @@ module QuillLayout =
         | AlignCenter -> 0
         | _ -> int p.IndentMarg - int p.LeftMarg
 
-    let paragraphIndents (p: ParaTable) =
+    let paragraphIndents (p: ParaTable) (bodyCols: int) =
         { LeftIndent = twipsFromCols (int p.LeftMarg)
-          RightIndent = twipsFromCols (max 0 (DefaultBodyWidthCols - int p.RightMarg))
+          RightIndent = twipsFromCols (max 0 (bodyCols - int p.RightMarg))
           FirstLineIndent = twipsFromCols (firstLineIndentCols p) }
 
     /// Layout-table header/footer justification: 0 none (not printed), 1 left, 2 centre, 3 right.

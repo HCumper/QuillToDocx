@@ -15,13 +15,17 @@
     <Compile Include="QuillTypes.fs" />
     <Compile Include="QuillBinary.fs" />
     <Compile Include="QuillParser.fs" />
+    <Compile Include="QuillCharset.fs" />
     <Compile Include="QuillDecode.fs" />
     <Compile Include="QuillLayout.fs" />
+    <Compile Include="QuillWriter.fs" />
     <Compile Include="DocxWriter.fs" />
     <Compile Include="RtfWriter.fs" />
     <Compile Include="PdfWriter.fs" />
     <Compile Include="HtmlWriter.fs" />
     <Compile Include="MarkdownWriter.fs" />
+    <Compile Include="RtfReader.fs" />
+    <Compile Include="QuillFromRtf.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

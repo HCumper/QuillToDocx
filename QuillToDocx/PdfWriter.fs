@@ -125,7 +125,7 @@ module PdfWriter =
         sprintf "BT /F1 %.1f Tf %.3f Tw 1 0 0 1 %.2f %.2f Tm (%s) Tj ET" FontSizePt wordSpacing x y (pdfEscape text)
 
     let private renderPages (qf: QuillFile) (doc: DecodedDocument) =
-        let page = QuillLayout.pageGeometry qf.Layout
+        let page = QuillLayout.pageGeometry qf.Layout (QuillLayout.bodyWidthCols qf)
         let pageWidthPt = pointsFromTwips page.Width
         let pageHeightPt = pointsFromTwips page.Height
         let leftMarginPt = pointsFromTwips page.LeftMargin

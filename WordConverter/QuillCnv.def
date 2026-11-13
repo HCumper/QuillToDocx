@@ -5,5 +5,7 @@ EXPORTS
     GetReadNames
     IsFormatCorrect32
     ForeignToRtf32
+    GetWriteNames
+    RtfToForeign32
     CchFetchLpszError
     FRegisterConverter

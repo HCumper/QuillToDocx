@@ -60,28 +60,10 @@ module QuillDecode =
           Sub = false
           Super = false }
 
-    /// QL characters 0x80-0xBF: accented letters, Greek letters and arrows. 0xB5 was an odd
-    /// script mark in the original ROM; SMSQ/E made it the euro sign, which is how documents use it.
-    let private qlHighCharacters =
-        "\u00E4\u00E3\u00E5\u00E9\u00F6\u00F5\u00F8\u00FC\u00E7\u00F1\u00E6\u0153\u00E1\u00E0\u00E2\u00EB" // 80
-        + "\u00E8\u00EA\u00EF\u00ED\u00EC\u00EE\u00F3\u00F2\u00F4\u00FA\u00F9\u00FB\u00DF\u00A2\u00A5`" // 90
-        + "\u00C4\u00C3\u00C5\u00C9\u00D6\u00D5\u00D8\u00DC\u00C7\u00D1\u00C6\u0152\u03B1\u03B4\u03B8\u03BB" // A0
-        + "\u00B5\u03C0\u03C6\u00A1\u00BF\u20AC\u00A7\u00A4\u00AB\u00BB\u00B0\u00F7\u2190\u2192\u2191\u2193" // B0
-
     let private qlCharToUnicode (isPcFile: bool) (b: byte) =
-        if b < 0x20uy then
-            ""
-        elif isPcFile then
-            cp437.Value.GetString([| b |])
-        else
-            // The QL set is ASCII except for 0x60 (pound) and 0x7F (copyright).
-            match int b with
-            | 0x60 -> "\u00A3"
-            | 0x7F -> "\u00A9"
-            | x when x < 0x7F -> string (char x)
-            | x when x <= 0xBF -> string qlHighCharacters[x - 0x80]
-            // Not QL characters; the few files that use them hold Latin-1 text (0xE9 for e-acute).
-            | x -> string (char x)
+        if b < 0x20uy then ""
+        elif isPcFile then cp437.Value.GetString([| b |])
+        else string (QuillCharset.toUnicode b)
 
     let private getParagraphBytes (qf: QuillFile) (p: ParaTable) =
         let start = int p.Offset - int qf.Header.HeaderLen
@@ -93,7 +75,7 @@ module QuillDecode =
                 failwithf "Paragraph out of range: offset=%d len=%d" start len
             qf.TextBuffer[start .. start + len - 1]
 
-    let private decodeParagraphContent (qf: QuillFile) (bytes: byte[]) =
+    let private decodeParagraphContent (isPcFile: bool) (bytes: byte[]) =
         let mutable style = defaultStyle
         let sb = StringBuilder()
         let items = ResizeArray<Inline>()
@@ -142,7 +124,7 @@ module QuillDecode =
                 items.Add(RunPageBreak)
 
             | _ ->
-                let s = qlCharToUnicode qf.IsPcFile b
+                let s = qlCharToUnicode isPcFile b
                 if not (String.IsNullOrEmpty s) then
                     sb.Append(s) |> ignore
 
@@ -187,7 +169,7 @@ module QuillDecode =
         let current = ResizeArray<byte>()
         let mutable index = 0
         let flushParagraph () =
-            let content = decodeParagraphContent qf (current.ToArray())
+            let content = decodeParagraphContent qf.IsPcFile (current.ToArray())
             if not content.IsEmpty then
                 paras.Add(
                     { Index = index
@@ -218,10 +200,17 @@ module QuillDecode =
             Some
                 { Index = index
                   Descriptor = p
-                  Content = decodeParagraphContent qf (getParagraphBytes qf p)
+                  Content = decodeParagraphContent qf.IsPcFile (getParagraphBytes qf p)
                   PageBreakBefore = false }
         with _ ->
             None
+
+    /// The runs of paragraph-table entry `index` exactly as stored, form feeds included.
+    let entryContent (qf: QuillFile) index =
+        decodeParagraphContent qf.IsPcFile (getParagraphBytes qf qf.Paras[index])
+
+    /// The runs of QL paragraph text held elsewhere than in a file.
+    let decodeText (bytes: byte[]) = decodeParagraphContent false bytes
 
     let private isBlank item =
         match item with

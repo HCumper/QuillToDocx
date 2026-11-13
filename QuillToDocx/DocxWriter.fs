@@ -96,7 +96,7 @@ module DocxWriter =
         field.AppendChild(r) |> ignore
         field
 
-    let private paraProps (qf: QuillFile) (p: ParaTable) pageBreakBefore =
+    let private paraProps (qf: QuillFile) bodyCols (p: ParaTable) pageBreakBefore =
         let pp = ParagraphProperties()
 
         pp.AppendChild(ParagraphStyleId(Val = "Normal")) |> ignore
@@ -104,7 +104,7 @@ module DocxWriter =
         // Schema order: pageBreakBefore follows pStyle and precedes tabs.
         if pageBreakBefore then pp.AppendChild(PageBreakBefore()) |> ignore
 
-        let indents = QuillLayout.paragraphIndents p
+        let indents = QuillLayout.paragraphIndents p bodyCols
 
         let ind = Indentation(Left = StringValue(indents.LeftIndent.ToString()))
         if indents.RightIndent > 0 then ind.Right <- StringValue(indents.RightIndent.ToString())
@@ -162,9 +162,9 @@ module DocxWriter =
         styles.AppendChild(normalStyle) |> ignore
         stylesPart.Styles <- styles
 
-    let private buildParagraph (qf: QuillFile) (p: DecodedParagraph) =
+    let private buildParagraph (qf: QuillFile) bodyCols (p: DecodedParagraph) =
         let para = Paragraph()
-        para.AppendChild(paraProps qf p.Descriptor p.PageBreakBefore) |> ignore
+        para.AppendChild(paraProps qf bodyCols p.Descriptor p.PageBreakBefore) |> ignore
         for item in p.Content do
             para.AppendChild(makeRun item) |> ignore
         para
@@ -211,9 +211,10 @@ module DocxWriter =
         let main = pkg.AddMainDocumentPart()
         createStylesPart qf.Layout main
         let body = Body()
+        let bodyCols = QuillLayout.bodyWidthCols qf
 
         for p in doc.BodyParagraphs do
-            body.AppendChild(buildParagraph qf p) |> ignore
+            body.AppendChild(buildParagraph qf bodyCols p) |> ignore
 
         let sect = SectionProperties()
 
@@ -247,7 +248,7 @@ module DocxWriter =
             sect.AppendChild(FooterReference(Type = HeaderFooterValues.Default, Id = main.GetIdOfPart(part))) |> ignore
         | _ -> ()
 
-        let page = QuillLayout.pageGeometry qf.Layout
+        let page = QuillLayout.pageGeometry qf.Layout bodyCols
 
         let pageMargin =
             PageMargin(

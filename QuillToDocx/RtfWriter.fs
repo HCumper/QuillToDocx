@@ -81,12 +81,12 @@ module RtfWriter =
         sb.Append(@"\pard\plain").Append(alignmentControl alignment) |> ignore
         sb.AppendFormat(@"\sb0\sa{0}\sl{1}\slmult1", paragraphAfterTwips layout, lineSpacingTwips layout) |> ignore
 
-    let private appendBodyParagraph (sb: StringBuilder) (qf: QuillFile) (p: DecodedParagraph) =
+    let private appendBodyParagraph (sb: StringBuilder) (qf: QuillFile) bodyCols (p: DecodedParagraph) =
         appendParagraphStart sb qf.Layout (paragraphAlignment p.Descriptor.Justif)
 
         if p.PageBreakBefore then sb.Append(@"\pagebb") |> ignore
 
-        let indents = paragraphIndents p.Descriptor
+        let indents = paragraphIndents p.Descriptor bodyCols
         sb.AppendFormat(@"\li{0}", indents.LeftIndent) |> ignore
         if indents.RightIndent > 0 then sb.AppendFormat(@"\ri{0}", indents.RightIndent) |> ignore
         if indents.FirstLineIndent <> 0 then sb.AppendFormat(@"\fi{0}", indents.FirstLineIndent) |> ignore
@@ -130,10 +130,15 @@ module RtfWriter =
 
     let buildRtf (qf: QuillFile) (doc: DecodedDocument) =
         let sb = StringBuilder()
-        let page = pageGeometry qf.Layout
+        let bodyCols = bodyWidthCols qf
+        let page = pageGeometry qf.Layout bodyCols
 
         sb.Append(@"{\rtf1\ansi\ansicpg1252\deff0\uc1").Append("\r\n") |> ignore
         sb.Append(@"{\fonttbl{\f0\fmodern\fcharset0 Courier New;}}").Append("\r\n") |> ignore
+
+        // Word keeps document variables, so saving back to Quill can restore what Word can't show.
+        sb.Append(@"{\*\docvar {").Append(QuillOriginal.VariableName).Append("}{") |> ignore
+        sb.Append(QuillOriginal.encode qf).Append("}}").Append("\r\n") |> ignore
 
         sb.AppendFormat(
             @"\paperw{0}\paperh{1}\margl{2}\margr{3}\margt{4}\margb{5}",
@@ -163,10 +168,11 @@ module RtfWriter =
             appendHeaderFooter sb qf.Layout @"\footer" fp qf.Layout.FooterF (qf.Layout.FooterBold <> 0uy)
         | _ -> ()
 
-        doc.BodyParagraphs
-        |> List.iteri (fun i p ->
-            if i > 0 then sb.Append(@"\par").Append("\r\n") |> ignore
-            appendBodyParagraph sb qf p)
+        // Like Word, end every paragraph with \par, the last too: Word adds no paragraph for a
+        // final \par, but drops an empty last paragraph that has none.
+        for p in doc.BodyParagraphs do
+            appendBodyParagraph sb qf bodyCols p
+            sb.Append(@"\par").Append("\r\n") |> ignore
 
         sb.Append('}').Append("\r\n") |> ignore
         sb.ToString()
